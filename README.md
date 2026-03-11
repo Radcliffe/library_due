@@ -12,7 +12,7 @@ The Firefox browser is required, but you can modify the code to use a different 
 
 # Installation
 
-1. Clone the repository:
+1. Clone the repository (or download the archive and unzip):
 
    ```bash
    git clone https://github.com/Radcliffe/library_due.git
@@ -21,7 +21,7 @@ The Firefox browser is required, but you can modify the code to use a different 
 2. Create a virtual environment and activate it:
 
    ```bash
-   python -m venv env
+   python3 -m venv env
    source env/bin/activate  # On Windows: env\Scripts\activate
     ```
 3. Install the required dependencies:
@@ -49,6 +49,9 @@ Run the script to list your checked-out library items and their due dates:
 ```bash
 python library_due.py
 ```
+
+The script launches the Firefox browser (invisibly) and logs into your library account using your login credentials.
+This may take up to 30 seconds, so be patient.
 
 ## Options
 
