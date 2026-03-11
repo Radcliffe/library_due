@@ -41,6 +41,8 @@ The Firefox browser is required, but you can modify the code to use a different 
    LIBRARY_PIN=your_password
     ```
 
+If the `.env` file is not present, the script will use the `LIBRARY_USERNAME` and `LIBRARY_PIN` environment variables if they are set.
+
 # Usage
 Run the script to list your checked-out library items and their due dates:
 
@@ -53,6 +55,7 @@ python library_due.py
 - `--headed`: Run the browser in headed mode (default: False).
 - `--json`: Output the results in JSON format (default: False).
 - `--debug-html checkedout.html`: Save the HTML of the checked-out items page for debugging purposes.
+- `--input-html checkedout.html`: Use a saved HTML file instead of fetching it from the website (useful for testing).
 - `--state-file .library_state.json`: Save the browser session to a file for reuse in future runs.
 
 

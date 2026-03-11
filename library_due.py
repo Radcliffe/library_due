@@ -18,6 +18,7 @@ Installation:
 from __future__ import annotations
 
 import argparse
+from enum import Enum, auto
 import json
 import os
 import re
@@ -73,6 +74,37 @@ class CheckedOutItem:
     renew_count: Optional[str]
     call_number: Optional[str]
     barcode: Optional[str]
+
+
+class PageState(Enum):
+    LOGIN_FORM = auto()
+    ITEMS_LOADED = auto()
+    EMPTY_LIST = auto()
+    LOADING = auto()
+    UNEXPECTED = auto()
+
+
+def detect_page_state(page) -> PageState:
+    # Check for login form first
+    if (
+        page.locator(NAME_INPUT_SELECTOR).count() > 0
+        and page.locator(PIN_INPUT_SELECTOR).count() > 0
+    ):
+        return PageState.LOGIN_FORM
+
+    # Check for checked-out items
+    if page.locator(LIST_ITEM_SELECTOR).count() > 0:
+        return PageState.ITEMS_LOADED
+
+    # Check for empty list container (logged in, nothing out)
+    if page.locator(".cp-item-list").count() > 0:
+        return PageState.EMPTY_LIST
+
+    # Check if page is still loading (no meaningful content yet)
+    if page.locator("body").inner_text().strip() == "":
+        return PageState.LOADING
+
+    return PageState.UNEXPECTED
 
 
 def clean_text(value: Optional[str]) -> Optional[str]:
@@ -176,34 +208,54 @@ def login_and_fetch_html(
 
         try:
             page.goto(CHECKED_OUT_URL, wait_until="domcontentloaded", timeout=timeout_ms)
+            _wait_for_page(page, timeout_ms)
 
-            if page_looks_logged_out(page):
+            state = detect_page_state(page)
+
+            if state == PageState.LOGIN_FORM:
                 if not username or not pin:
                     raise RuntimeError(
-                        "Saved session is missing or expired, and LIBRARY_USERNAME / LIBRARY_PIN were not provided."
+                        "Saved session is missing or expired, and "
+                        "LIBRARY_USERNAME / LIBRARY_PIN were not provided."
                     )
                 perform_login(page, username, pin, timeout_ms)
                 page.goto(CHECKED_OUT_URL, wait_until="domcontentloaded", timeout=timeout_ms)
+                _wait_for_page(page, timeout_ms)
+                state = detect_page_state(page)
 
-            try:
-                page.wait_for_selector(
-                    WAIT_FOR_SELECTORS,
-                    timeout=timeout_ms,
+            if state == PageState.LOGIN_FORM:
+                raise RuntimeError(
+                    "Still on login page after authentication attempt. "
+                    "Check your username/PIN."
                 )
-            except PlaywrightTimeoutError:
-                pass
-
-            html = page.content()
-
-            if page_looks_logged_out(page):
-                raise RuntimeError("Still on login page after attempting authentication.")
-
-            context.storage_state(path=str(state_path))
-            return html
+            elif state == PageState.ITEMS_LOADED:
+                html = page.content()
+                context.storage_state(path=str(state_path))
+                return html
+            elif state == PageState.EMPTY_LIST:
+                context.storage_state(path=str(state_path))
+                return ""
+            elif state == PageState.LOADING:
+                raise RuntimeError("Page did not finish loading within timeout.")
+            elif state == PageState.UNEXPECTED:
+                raise RuntimeError(
+                    f"Unexpected page state after navigation. "
+                    f"URL: {page.url!r}, title: {page.title()!r}"
+                )
+            else:
+                raise RuntimeError(f"Unhandled page state: {state!r}")
 
         finally:
             context.close()
             browser.close()
+
+
+def _wait_for_page(page, timeout_ms: int) -> None:
+    """Wait for the page to leave the loading state, without raising on timeout."""
+    try:
+        page.wait_for_selector(WAIT_FOR_SELECTORS, timeout=timeout_ms)
+    except PlaywrightTimeoutError:
+        pass
 
 
 def print_table(items: List[CheckedOutItem]) -> None:
@@ -243,6 +295,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Output JSON instead of a table.")
     parser.add_argument("--headed", action="store_true", help="Show the browser window for debugging.")
     parser.add_argument("--debug-html", help="Write fetched HTML to this file.")
+    parser.add_argument("--input-html", help="Parse from a saved HTML file instead of fetching.")
     parser.add_argument(
         "--state-file",
         default=DEFAULT_STATE_FILE,
@@ -254,16 +307,19 @@ def main() -> int:
     pin = os.environ.get("LIBRARY_PIN")
 
     try:
-        html = login_and_fetch_html(
-            username=username,
-            pin=pin,
-            state_file=args.state_file,
-            headed=args.headed,
-        )
+        if args.input_html:
+            html = Path(args.input_html).read_text(encoding="utf-8")
+        else:
+            html = login_and_fetch_html(
+                username=username,
+                pin=pin,
+                state_file=args.state_file,
+                headed=args.headed,
+            )
 
-        if args.debug_html:
-            with open(args.debug_html, "w", encoding="utf-8") as f:
-                f.write(html)
+            if args.debug_html:
+                with open(args.debug_html, "w", encoding="utf-8") as f:
+                    f.write(html)
 
         items = parse_checked_out_html(html)
 

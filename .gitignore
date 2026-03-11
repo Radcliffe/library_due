@@ -215,5 +215,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Browser session
-.library_browser_state.json
+# HTML files - used for testing and debugging
+*.html
+
+# JSON files - used to store browser state
+*.json
