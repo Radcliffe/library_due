@@ -61,4 +61,6 @@ This may take up to 30 seconds, so be patient.
 - `--input-html checkedout.html`: Use a saved HTML file instead of fetching it from the website (useful for testing).
 - `--state-file .library_state.json`: Save the browser session to a file for reuse in future runs.
 
+# License
 
+This project is licensed under the MIT License. See the [LICENSE.md](LICENSE.md) file for details.
