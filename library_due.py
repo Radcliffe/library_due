@@ -45,24 +45,46 @@ DEFAULT_STATE_FILE = ".library_browser_state.json"
 TIMEOUT_MS = 30000
 
 # CSS Selectors
-LIST_ITEM_SELECTOR = "div.cp-batch-actions-list-item[data-key='check-out-list-item']"
-NAME_INPUT_SELECTOR = "input[name='name']"
-PIN_INPUT_SELECTOR = "input[name='user_pin']"
-REMEMBER_ME_SELECTOR = "input[name='remember_me']"
-WAIT_FOR_SELECTORS = "div.cp-batch-actions-list-item[data-key='check-out-list-item'], .cp-item-list, input[name='name'], input[name='user_pin'], input[name='remember_me']"
-TITLE_SELECTOR = "h2.cp-title .title-content"
-SUBTITLE_SELECTOR = "h2.cp-title .cp-subtitle"
-AUTHOR_SELECTOR = ".cp-by-author-block .author-link"
-DUE_DATE_SELECTOR = ".cp-checked-out-due-on .cp-short-formatted-date"
-DAYS_REMAINING_SELECTOR = ".cp-due-date-notice .due-date-notice"
-RENEW_COUNT_SELECTOR = ".cp-renew-count"
-CALL_NUMBER_AND_BARCODE_SELECTOR = ".call-number-and-barcode .cp-item-field"
-FIELD_NAME_SELECTOR = ".field-name"
-FIELD_VALUE_SELECTOR = ".field-value"
 
-# Field names
-CALL_NUMBER_FIELD_NAME = "Call number"
-BARCODE_FIELD_NAME = "Barcode"
+class AuthSelector(str, Enum):
+    """Selectors related to authentication/login forms."""
+    NAME_INPUT = "input[name='name']"
+    PIN_INPUT = "input[name='user_pin']"
+    REMEMBER_ME = "input[name='remember_me']"
+    COMMIT_BUTTON = "input[name='commit']"
+
+class CheckoutSelector(str, Enum):
+    """Selectors related to the checkout/batch actions list."""
+    BODY = "body"
+    LIST_ITEM = "div.cp-batch-actions-list-item[data-key='check-out-list-item']"
+    ITEM_LIST = ".cp-item-list"
+    WAIT_FOR = (
+        "div.cp-batch-actions-list-item[data-key='check-out-list-item'], "
+        ".cp-item-list, "
+        "input[name='name'], "
+        "input[name='user_pin'], "
+        "input[name='remember_me']"
+    )
+
+class ItemDetailSelector(str, Enum):
+    """Selectors for individual item metadata (title, author, due date, etc.)."""
+    TITLE = "h2.cp-title .title-content"
+    SUBTITLE = "h2.cp-title .cp-subtitle"
+    AUTHOR = ".cp-by-author-block .author-link"
+    DUE_DATE = ".cp-checked-out-due-on .cp-short-formatted-date"
+    DAYS_REMAINING = ".cp-due-date-notice .due-date-notice"
+    RENEW_COUNT = ".cp-renew-count"
+
+class CallNumberSelector(str, Enum):
+    """Selectors for call number and barcode field components."""
+    CALL_NUMBER_AND_BARCODE = ".call-number-and-barcode .cp-item-field"
+    FIELD_NAME = ".field-name"
+    FIELD_VALUE = ".field-value"
+
+class FieldName(str, Enum):
+    """Expected field names for call number and barcode."""
+    CALL_NUMBER = "Call number"
+    BARCODE = "Barcode"
 
 @dataclass
 class CheckedOutItem:
@@ -87,21 +109,21 @@ class PageState(Enum):
 def detect_page_state(page) -> PageState:
     # Check for login form first
     if (
-        page.locator(NAME_INPUT_SELECTOR).count() > 0
-        and page.locator(PIN_INPUT_SELECTOR).count() > 0
+        page.locator(AuthSelector.NAME_INPUT).count() > 0
+        and page.locator(AuthSelector.PIN_INPUT).count() > 0
     ):
         return PageState.LOGIN_FORM
 
     # Check for checked-out items
-    if page.locator(LIST_ITEM_SELECTOR).count() > 0:
+    if page.locator(CheckoutSelector.LIST_ITEM).count() > 0:
         return PageState.ITEMS_LOADED
 
     # Check for empty list container (logged in, nothing out)
-    if page.locator(".cp-item-list").count() > 0:
+    if page.locator(CheckoutSelector.ITEM_LIST).count() > 0:
         return PageState.EMPTY_LIST
 
     # Check if page is still loading (no meaningful content yet)
-    if page.locator("body").inner_text().strip() == "":
+    if page.locator(CheckoutSelector.BODY).inner_text().strip() == "":
         return PageState.LOADING
 
     return PageState.UNEXPECTED
@@ -123,28 +145,28 @@ def parse_checked_out_html(html: str) -> List[CheckedOutItem]:
     soup = BeautifulSoup(html, "html.parser")
     items: List[CheckedOutItem] = []
 
-    for node in soup.select(LIST_ITEM_SELECTOR):
-        title = get_field_value(node, TITLE_SELECTOR)
+    for node in soup.select(CheckoutSelector.LIST_ITEM):
+        title = get_field_value(node, ItemDetailSelector.TITLE)
         if not title:
             continue
-        subtitle = get_field_value(node, SUBTITLE_SELECTOR)
-        author = get_field_value(node, AUTHOR_SELECTOR)
-        due_date = get_field_value(node, DUE_DATE_SELECTOR)
-        days_remaining = get_field_value(node, DAYS_REMAINING_SELECTOR)
-        renew_count = get_field_value(node, RENEW_COUNT_SELECTOR)
+        subtitle = get_field_value(node, ItemDetailSelector.SUBTITLE)
+        author = get_field_value(node, ItemDetailSelector.AUTHOR)
+        due_date = get_field_value(node, ItemDetailSelector.DUE_DATE)
+        days_remaining = get_field_value(node, ItemDetailSelector.DAYS_REMAINING)
+        renew_count = get_field_value(node, ItemDetailSelector.RENEW_COUNT)
 
         call_number = None
         barcode = None
-        for field in node.select(CALL_NUMBER_AND_BARCODE_SELECTOR):
-            field_name = get_field_value(field, FIELD_NAME_SELECTOR)
-            if field_name not in (CALL_NUMBER_FIELD_NAME, BARCODE_FIELD_NAME):
+        for field in node.select(CallNumberSelector.CALL_NUMBER_AND_BARCODE):
+            field_name = get_field_value(field, CallNumberSelector.FIELD_NAME)
+            if field_name not in (FieldName.CALL_NUMBER, FieldName.BARCODE):
                 continue
-            field_value = get_field_value(field, FIELD_VALUE_SELECTOR)
+            field_value = get_field_value(field, CallNumberSelector.FIELD_VALUE)
             if not field_value:
                 continue
-            if field_name == CALL_NUMBER_FIELD_NAME:
+            if field_name == FieldName.CALL_NUMBER:
                 call_number = field_value
-            elif field_name == BARCODE_FIELD_NAME:
+            elif field_name == FieldName.BARCODE:
                 barcode = field_value
 
         items.append(
@@ -165,7 +187,7 @@ def parse_checked_out_html(html: str) -> List[CheckedOutItem]:
 
 def page_looks_logged_out(page) -> bool:
     try:
-        return page.locator(NAME_INPUT_SELECTOR).count() > 0 and page.locator(PIN_INPUT_SELECTOR).count() > 0
+        return page.locator(AuthSelector.NAME_INPUT).count() > 0 and page.locator(AuthSelector.PIN_INPUT).count() > 0
     except Exception:
         return False
 
@@ -173,15 +195,15 @@ def page_looks_logged_out(page) -> bool:
 def perform_login(page, username: str, pin: str, timeout_ms: int) -> None:
     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=timeout_ms)
 
-    page.locator(NAME_INPUT_SELECTOR).fill(username)
-    page.locator(PIN_INPUT_SELECTOR).fill(pin)
+    page.locator(AuthSelector.NAME_INPUT).fill(username)
+    page.locator(AuthSelector.PIN_INPUT).fill(pin)
 
-    remember = page.locator(REMEMBER_ME_SELECTOR)
+    remember = page.locator(AuthSelector.REMEMBER_ME)
     if remember.count() > 0 and not remember.is_checked():
         remember.check()
 
     with page.expect_navigation(wait_until="networkidle", timeout=timeout_ms):
-        page.locator("input[name='commit']").click()
+        page.locator(AuthSelector.COMMIT_BUTTON).click()
 
     if page_looks_logged_out(page):
         raise RuntimeError("Login failed. Check your username/PIN or see if the site changed.")
@@ -253,7 +275,7 @@ def login_and_fetch_html(
 def _wait_for_page(page, timeout_ms: int) -> None:
     """Wait for the page to leave the loading state, without raising on timeout."""
     try:
-        page.wait_for_selector(WAIT_FOR_SELECTORS, timeout=timeout_ms)
+        page.wait_for_selector(CheckoutSelector.WAIT_FOR, timeout=timeout_ms)
     except PlaywrightTimeoutError:
         pass
 
